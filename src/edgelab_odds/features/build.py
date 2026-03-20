@@ -60,11 +60,15 @@ def _engineer(df: pd.DataFrame) -> pd.DataFrame:
     # Market edge: positive means market favours Red
     feat["odds_edge"] = nv["red_imp_prob_novigml"] - nv["blue_imp_prob_novigml"]
 
-    # Log-odds ratio — useful feature for tree models
+    # Log-odds ratio — useful feature for tree models.
+    # errstate suppresses the divide-by-zero warning; we then explicitly
+    # replace any resulting ±inf (prob = 0) or NaN with NaN so downstream
+    # models receive clean missing-value indicators rather than ±inf.
     with np.errstate(divide="ignore", invalid="ignore"):
-        feat["log_odds_ratio"] = np.log(
+        log_ratio = np.log(
             nv["red_imp_prob_novigml"] / nv["blue_imp_prob_novigml"]
         )
+    feat["log_odds_ratio"] = log_ratio.replace([np.inf, -np.inf], np.nan)
 
     # ── 2. Physical differentials ─────────────────────────────────────────────
     feat["height_dif_cm"] = df["red_height_cms"] - df["blue_height_cms"]
@@ -107,15 +111,18 @@ def _engineer(df: pd.DataFrame) -> pd.DataFrame:
     feat["sub_att_dif"]   = df["red_avg_sub_att"]   - df["blue_avg_sub_att"]
 
     # ── 4. Style — win-method rates ───────────────────────────────────────────
+    # Use np.where so fighters with 0 wins yield NaN instead of 0/1 = 0
+    # (clip(lower=1) would silently turn 0-win fighters into fake 0% rates).
     for corner, col_prefix in [("red", "red"), ("blue", "blue")]:
-        wins   = df[f"{col_prefix}_wins"].fillna(0).clip(lower=1)
-        feat[f"{corner}_ko_rate"]  = df[f"{col_prefix}_wins_ko"].fillna(0)  / wins
-        feat[f"{corner}_sub_rate"] = df[f"{col_prefix}_wins_sub"].fillna(0) / wins
-        feat[f"{corner}_dec_rate"] = (
+        wins = df[f"{col_prefix}_wins"].fillna(0)
+        dec  = (
             df[f"{col_prefix}_wins_dec_majority"].fillna(0)
             + df[f"{col_prefix}_wins_dec_split"].fillna(0)
             + df[f"{col_prefix}_wins_dec_unanimous"].fillna(0)
-        ) / wins
+        )
+        feat[f"{corner}_ko_rate"]  = np.where(wins > 0, df[f"{col_prefix}_wins_ko"].fillna(0)  / wins, np.nan)
+        feat[f"{corner}_sub_rate"] = np.where(wins > 0, df[f"{col_prefix}_wins_sub"].fillna(0) / wins, np.nan)
+        feat[f"{corner}_dec_rate"] = np.where(wins > 0, dec / wins, np.nan)
 
     # ── 5. Stance encoding ────────────────────────────────────────────────────
     feat["red_stance_enc"]  = df["red_stance"].map(_STANCE_ENC).fillna(-1).astype(int)

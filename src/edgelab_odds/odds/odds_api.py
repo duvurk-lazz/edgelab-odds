@@ -222,6 +222,8 @@ def normalise_odds(raw: list[dict]) -> pd.DataFrame:
         except Exception:
             pass
 
+        # Drop outcomes with missing prices before accessing by index
+        outcomes = [o for o in outcomes if o.get("price") is not None]
         if len(outcomes) < 2:
             continue
 

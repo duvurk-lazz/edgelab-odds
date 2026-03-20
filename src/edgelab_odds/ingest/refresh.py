@@ -275,7 +275,7 @@ def upsert_upcoming_fights(
         conn.execute("DELETE FROM fights WHERE label = -1")
         conn.register("_upcoming", df)
         cols = ", ".join(c for c in df.columns)
-        conn.execute(f"INSERT OR IGNORE INTO fights ({cols}) SELECT {cols} FROM _upcoming")
+        conn.execute(f"INSERT INTO fights ({cols}) SELECT {cols} FROM _upcoming ON CONFLICT DO NOTHING")
         conn.unregister("_upcoming")
         n = row_count("fights", conn)
 
